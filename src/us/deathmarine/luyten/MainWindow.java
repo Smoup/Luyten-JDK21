@@ -11,39 +11,39 @@ import java.awt.event.ComponentEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.util.*;
-import java.util.concurrent.Callable;
 
 import javax.swing.*;
 import javax.swing.border.BevelBorder;
 import javax.swing.plaf.basic.BasicTabbedPaneUI;
 
+import lombok.Getter;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 
 /**
  * Dispatcher
  */
 public class MainWindow extends JFrame {
-	private static final long serialVersionUID = 5265556630724988013L;
+	@Serial
+    private static final long serialVersionUID = 5265556630724988013L;
 
 	private static final String TITLE = "Luyten";
 	private static final String DEFAULT_TAB = "#DEFAULT";
 
-	private JProgressBar bar;
-	private JLabel label;
+	@Getter
+    private final JProgressBar bar;
+	@Getter
+    private final JLabel label;
 	FindBox findBox;
 	private FindAllBox findAllBox;
-	private ConfigSaver configSaver;
-	private WindowPosition windowPosition;
-	private LuytenPreferences luytenPrefs;
-	private FileDialog fileDialog;
-	private FileSaver fileSaver;
-	private JTabbedPane jarsTabbedPane;
-	private Map<String, Model> jarModels;
+	private final ConfigSaver configSaver;
+	private final WindowPosition windowPosition;
+	private final LuytenPreferences luytenPrefs;
+	private final FileDialog fileDialog;
+	private final FileSaver fileSaver;
+	private final JTabbedPane jarsTabbedPane;
+	private final Map<String, Model> jarModels;
 	public MainMenuBar mainMenuBar;
 
 	public MainWindow(File fileFromCommandLine) {
@@ -51,7 +51,7 @@ public class MainWindow extends JFrame {
 		windowPosition = configSaver.getMainWindowPosition();
 		luytenPrefs = configSaver.getLuytenPreferences();
 
-		jarModels = new HashMap<String, Model>();
+		jarModels = new HashMap<>();
 		mainMenuBar = new MainMenuBar(this);
 		this.setJMenuBar(mainMenuBar);
 
@@ -92,26 +92,7 @@ public class MainWindow extends JFrame {
 		jarsTabbedPane.addTab(DEFAULT_TAB, new Model(this));
 		this.getContentPane().add(jarsTabbedPane);
 
-		JSplitPane spt = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, panel1, panel2) {
-			private static final long serialVersionUID = 2189946972124687305L;
-			private final int location = 400;
-
-			{
-				setDividerLocation(location);
-			}
-
-			@Override
-			public int getDividerLocation() {
-				return location;
-			}
-
-			@Override
-			public int getLastDividerLocation() {
-				return location;
-			}
-		};
-		spt.setBorder(new BevelBorder(BevelBorder.LOWERED));
-		spt.setPreferredSize(new Dimension(this.getWidth(), 24));
+		JSplitPane spt = getJSplitPane(panel1, panel2);
 		this.add(spt, BorderLayout.SOUTH);
 		Model jarModel = null;
 		if (fileFromCommandLine != null) {
@@ -139,6 +120,31 @@ public class MainWindow extends JFrame {
 		}
 		
 		if(RecentFiles.load() > 0) mainMenuBar.updateRecentFiles();
+	}
+
+	private JSplitPane getJSplitPane(JPanel panel1, JPanel panel2) {
+		JSplitPane spt = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, panel1, panel2) {
+			@Serial
+            private static final long serialVersionUID = 2189946972124687305L;
+			private final int location = 400;
+
+			{
+				setDividerLocation(location);
+			}
+
+			@Override
+			public int getDividerLocation() {
+				return location;
+			}
+
+			@Override
+			public int getLastDividerLocation() {
+				return location;
+			}
+		};
+		spt.setBorder(new BevelBorder(BevelBorder.LOWERED));
+		spt.setPreferredSize(new Dimension(this.getWidth(), 24));
+		return spt;
 	}
 
 	private void createDefaultTab() {
@@ -174,18 +180,15 @@ public class MainWindow extends JFrame {
 
 		final String tabName = file.getName();
 		int index = jarsTabbedPane.indexOfTab(tabName);
-		Model.Tab tabUI = new Model.Tab(tabName, new Callable<Void>() {
-			@Override
-			public Void call() {
-				int index = jarsTabbedPane.indexOfTab(tabName);
-				jarModels.remove(file.getAbsolutePath());
-				jarsTabbedPane.remove(index);
-				if (jarsTabbedPane.getTabCount() == 0) {
-					createDefaultTab();
-				}
-				return null;
-			}
-		});
+		Model.Tab tabUI = new Model.Tab(tabName, () -> {
+            int index1 = jarsTabbedPane.indexOfTab(tabName);
+            jarModels.remove(file.getAbsolutePath());
+            jarsTabbedPane.remove(index1);
+            if (jarsTabbedPane.getTabCount() == 0) {
+                createDefaultTab();
+            }
+            return null;
+        });
 		jarsTabbedPane.setTabComponentAt(index, tabUI);
 		if (jarsTabbedPane.indexOfTab(DEFAULT_TAB) != -1 && jarsTabbedPane.getTabCount() > 1) {
 			removeDefaultTab();
@@ -275,19 +278,17 @@ public class MainWindow extends JFrame {
 	}
 
 	public void onLegalMenu() {
-		new Thread() {
-			public void run() {
-				try {
-					bar.setVisible(true);
-					bar.setIndeterminate(true);
-					String legalStr = getLegalStr();
-					getSelectedModel().showLegal(legalStr);
-				} finally {
-					bar.setIndeterminate(false);
-					bar.setVisible(false);
-				}
+		AsyncExecutor.execute(() -> {
+			try {
+				bar.setVisible(true);
+				bar.setIndeterminate(true);
+				String legalStr = getLegalStr();
+				getSelectedModel().showLegal(legalStr);
+			} finally {
+				bar.setIndeterminate(false);
+				bar.setVisible(false);
 			}
-		}.start();
+		});
 	}
 
 	public void onListLoadedClasses() {
@@ -297,9 +298,9 @@ public class MainWindow extends JFrame {
 			bar.setVisible(true);
 			bar.setIndeterminate(true);
 			while (myCL != null) {
-				sb.append("ClassLoader: " + myCL + "\n");
-				for (Iterator<?> iter = list(myCL); iter.hasNext();) {
-					sb.append("\t" + iter.next() + "\n");
+				sb.append("ClassLoader: ").append(myCL).append("\n");
+				for (Iterator<?> iter = list(myCL); Objects.requireNonNull(iter).hasNext();) {
+					sb.append("\t").append(iter.next()).append("\n");
 				}
 				myCL = myCL.getParent();
 			}
@@ -331,13 +332,13 @@ public class MainWindow extends JFrame {
 		StringBuilder sb = new StringBuilder();
 		try {
 			BufferedReader reader = new BufferedReader(
-					new InputStreamReader(getClass().getResourceAsStream("/distfiles/Procyon.License.txt")));
+					new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream("/distfiles/Procyon.License.txt"))));
 			String line;
 			while ((line = reader.readLine()) != null)
 				sb.append(line).append("\n");
 			sb.append("\n\n\n\n\n");
 			reader = new BufferedReader(
-					new InputStreamReader(getClass().getResourceAsStream("/distfiles/RSyntaxTextArea.License.txt")));
+					new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream("/distfiles/RSyntaxTextArea.License.txt"))));
 			while ((line = reader.readLine()) != null)
 				sb.append(line).append("\n");
 		} catch (IOException e) {
@@ -470,7 +471,8 @@ public class MainWindow extends JFrame {
 
 	private void setExitOnEscWhenEnabled(JComponent mainComponent) {
 		Action escapeAction = new AbstractAction() {
-			private static final long serialVersionUID = -3460391555954575248L;
+			@Serial
+            private static final long serialVersionUID = -3460391555954575248L;
 
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -488,11 +490,4 @@ public class MainWindow extends JFrame {
 		return (Model) jarsTabbedPane.getSelectedComponent();
 	}
 
-	public JProgressBar getBar() {
-		return bar;
-	}
-
-	public JLabel getLabel() {
-		return label;
-	}
 }

@@ -10,31 +10,28 @@ import javax.swing.filechooser.FileFilter;
  */
 public class FileDialog {
     private final DirPreferences dirPreferences;
-    private ConfigSaver configSaver;
-    private Component parent;
+    private final Component parent;
 	private JFileChooser fcOpen;
 	private JFileChooser fcSave;
 	private JFileChooser fcSaveAll;
 
 	public FileDialog(Component parent) {
 		this.parent = parent;
-		configSaver = ConfigSaver.getLoadedInstance();
+        ConfigSaver configSaver = ConfigSaver.getLoadedInstance();
         LuytenPreferences luytenPrefs = configSaver.getLuytenPreferences();
         dirPreferences = new DirPreferences(luytenPrefs);
 
-        new Thread() {
-			public void run() {
-				try {
-					initOpenDialog();
-					Thread.sleep(500);
-					initSaveAllDialog();
-					Thread.sleep(500);
-					initSaveDialog();
-				} catch (Exception e) {
-					Luyten.showExceptionDialog("Exception!", e);
-				}
-			};
-		}.start();
+        AsyncExecutor.execute(() -> {
+			try {
+				initOpenDialog();
+				Thread.sleep(500);
+				initSaveAllDialog();
+				Thread.sleep(500);
+				initSaveDialog();
+			} catch (Exception e) {
+				Luyten.showExceptionDialog("Exception!", e);
+			}
+		});
 	}
 
 	public File doOpenDialog() {
@@ -112,7 +109,7 @@ public class FileDialog {
 		return fc;
 	}
 
-	public class FileChooserFileFilter extends FileFilter {
+	public static class FileChooserFileFilter extends FileFilter {
 		String objType;
 
 		public FileChooserFileFilter(String string) {

@@ -1,20 +1,13 @@
 package us.deathmarine.luyten;
 
-import java.awt.Component;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Toolkit;
 import java.awt.event.*;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.StringWriter;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.HashSet;
@@ -50,6 +43,10 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.Theme;
 import org.fife.ui.rtextarea.RTextScrollPane;
@@ -68,8 +65,10 @@ import com.strobel.decompiler.PlainTextOutput;
 /**
  * Jar-level model
  */
+@Getter @Setter
 public class Model extends JSplitPane {
-	private static final long serialVersionUID = 6896857630400910200L;
+	@Serial
+    private static final long serialVersionUID = 6896857630400910200L;
 
 	private static final long MAX_JAR_FILE_SIZE_BYTES = 10_000_000_000L;
 	private static final long MAX_UNPACKED_FILE_SIZE_BYTES = 10_000_000L;
@@ -82,11 +81,11 @@ public class Model extends JSplitPane {
 	private File file;
 	private DecompilerSettings settings;
 	private DecompilationOptions decompilationOptions;
-	private Theme theme;
+    private Theme theme;
 	private MainWindow mainWindow;
 	private JProgressBar bar;
-	private JLabel label;
-	private HashSet<OpenFile> hmap = new HashSet<OpenFile>();
+    private JLabel label;
+	private HashSet<OpenFile> openFileSet = new HashSet<>();
 	private Set<String> treeExpansionState;
 	private boolean open = false;
 	private State state;
@@ -134,7 +133,7 @@ public class Model extends JSplitPane {
 		});
 
 		JPanel panel2 = new JPanel();
-		panel2.setLayout(new BoxLayout(panel2, 1));
+		panel2.setLayout(new BoxLayout(panel2, BoxLayout.Y_AXIS));
 		panel2.setBorder(BorderFactory.createTitledBorder("Structure"));
 		panel2.add(new JScrollPane(tree));
 
@@ -150,11 +149,12 @@ public class Model extends JSplitPane {
 			}
 		});
 
-		KeyStroke sfuncF4 = KeyStroke.getKeyStroke(KeyEvent.VK_F4, Keymap.ctrlDownModifier(), false);
-		mainWindow.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(sfuncF4, "CloseTab");
+		KeyStroke funcF4 = KeyStroke.getKeyStroke(KeyEvent.VK_F4, Keymap.ctrlDownModifier(), false);
+		mainWindow.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(funcF4, "CloseTab");
 
 		mainWindow.getRootPane().getActionMap().put("CloseTab", new AbstractAction() {
-			private static final long serialVersionUID = -885398399200419492L;
+			@Serial
+            private static final long serialVersionUID = -885398399200419492L;
 
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -164,7 +164,7 @@ public class Model extends JSplitPane {
 		});
 		
 		JPanel panel = new JPanel();
-		panel.setLayout(new BoxLayout(panel, 1));
+		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 		panel.setBorder(BorderFactory.createTitledBorder("Code"));
 		panel.add(house);
 		this.setOrientation(JSplitPane.HORIZONTAL_SPLIT);
@@ -184,60 +184,54 @@ public class Model extends JSplitPane {
 	public void show(String name, String contents) {
 		OpenFile open = new OpenFile(name, "*/" + name, getTheme(), mainWindow);
 		open.setContent(contents);
-		hmap.add(open);
+		openFileSet.add(open);
 		addOrSwitchToTab(open);
 	}
 
 	private void addOrSwitchToTab(final OpenFile open) {
-		SwingUtilities.invokeLater(new Runnable() {
-			@Override
-			public void run() {
-				try {
-					final String title = open.name;
-					RTextScrollPane rTextScrollPane = open.scrollPane;
-					int index = house.indexOfTab(title);
-					if (index > -1 && house.getTabComponentAt(index) != open.scrollPane) {
-						index = -1;
-						for (int i = 0; i < house.getTabCount(); i++) {
-							if (house.getComponentAt(i) == open.scrollPane) {
-								index = i;
-								break;
-							}
-						}
-					}
-					if (index < 0) {
-						house.addTab(title, rTextScrollPane);
-						index = house.indexOfComponent(rTextScrollPane);
-						house.setSelectedIndex(index);
-						Tab ct = new Tab(title, new Callable<Void>() {
-							@Override
-							public Void call() throws Exception {
-								int index = house.indexOfTab(title);
-								closeOpenTab(index);
-								return null;
-							}
-						});
-						house.setTabComponentAt(index, ct);
-					} else {
-						house.setSelectedIndex(index);
-					}
-					open.onAddedToScreen();
-				} catch (Exception e) {
-					Luyten.showExceptionDialog("Exception!", e);
-				}
-			}
-		});
+		SwingUtilities.invokeLater(() -> {
+            try {
+                final String title = open.name;
+                RTextScrollPane rTextScrollPane = open.scrollPane;
+                int index = house.indexOfTab(title);
+                if (index > -1 && house.getTabComponentAt(index) != open.scrollPane) {
+                    index = -1;
+                    for (int i = 0; i < house.getTabCount(); i++) {
+                        if (house.getComponentAt(i) == open.scrollPane) {
+                            index = i;
+                            break;
+                        }
+                    }
+                }
+                if (index < 0) {
+                    house.addTab(title, rTextScrollPane);
+                    index = house.indexOfComponent(rTextScrollPane);
+                    house.setSelectedIndex(index);
+                    Tab ct = new Tab(title, () -> {
+                        int index1 = house.indexOfTab(title);
+                        closeOpenTab(index1);
+                        return null;
+                    });
+                    house.setTabComponentAt(index, ct);
+                } else {
+                    house.setSelectedIndex(index);
+                }
+                open.onAddedToScreen();
+            } catch (Exception e) {
+                Luyten.showExceptionDialog("Exception!", e);
+            }
+        });
 	}
 
 	public void closeOpenTab(int index) {
 		RTextScrollPane co = (RTextScrollPane) house.getComponentAt(index);
 		RSyntaxTextArea pane = (RSyntaxTextArea) co.getViewport().getView();
 		OpenFile open = null;
-		for (OpenFile file : hmap)
+		for (OpenFile file : openFileSet)
 			if (pane.equals(file.textArea))
 				open = file;
-		if (open != null && hmap.contains(open))
-			hmap.remove(open);
+		if (open != null)
+			openFileSet.remove(open);
 		house.remove(co);
 		if (open != null)
 			open.close();
@@ -274,11 +268,7 @@ public class Model extends JSplitPane {
 			if (!isLeaf)
 				return;
 
-			new Thread() {
-				public void run() {
-					openEntryByTreePath(trp);
-				}
-			}.start();
+			AsyncExecutor.execute(() -> openEntryByTreePath(trp));
 		}
 	}
 
@@ -288,12 +278,11 @@ public class Model extends JSplitPane {
 			final TreePath treePath = event.getPath();
 
 			final Object expandedTreePathObject = treePath.getLastPathComponent();
-			if (!(expandedTreePathObject instanceof TreeNode)) {
+			if (!(expandedTreePathObject instanceof TreeNode expandedTreeNode)) {
 				return;
 			}
 
-			final TreeNode expandedTreeNode = (TreeNode) expandedTreePathObject;
-			if (expandedTreeNode.getChildCount() == 1) {
+            if (expandedTreeNode.getChildCount() == 1) {
 				final TreeNode descendantTreeNode = expandedTreeNode.getChildAt(0);
 
 				if (descendantTreeNode.isLeaf()) {
@@ -313,7 +302,7 @@ public class Model extends JSplitPane {
 
 	public void openEntryByTreePath(TreePath trp) {
 		String name = "";
-		String path = "";
+		StringBuilder path = new StringBuilder();
 		try {
 			bar.setVisible(true);
 			if (trp.getPathCount() > 1) {
@@ -323,10 +312,10 @@ public class Model extends JSplitPane {
 					if (i == trp.getPathCount() - 1) {
 						name = userObject.getOriginalName();
 					} else {
-						path = path + userObject.getOriginalName() + "/";
+						path.append(userObject.getOriginalName()).append("/");
 					}
 				}
-				path = path + name;
+				path.append(name);
 
 				if (file.getName().endsWith(".jar") || file.getName().endsWith(".zip")) {
 					if (state == null) {
@@ -337,7 +326,7 @@ public class Model extends JSplitPane {
 						state = new State(file.getCanonicalPath(), file, jfile, jarLoader);
 					}
 
-					JarEntry entry = state.jarFile.getJarEntry(path);
+					JarEntry entry = state.jarFile.getJarEntry(path.toString());
 					if (entry == null) {
 						throw new FileEntryNotFoundException();
 					}
@@ -349,28 +338,28 @@ public class Model extends JSplitPane {
 						getLabel().setText("Extracting: " + name);
 						String internalName = StringUtilities.removeRight(entryName, ".class");
 						TypeReference type = metadataSystem.lookupType(internalName);
-						extractClassToTextPane(type, name, path, null);
+						extractClassToTextPane(type, name, path.toString(), null);
 					} else {
 						getLabel().setText("Opening: " + name);
-						try (InputStream in = state.jarFile.getInputStream(entry);) {
-							extractSimpleFileEntryToTextPane(in, name, path);
+						try (InputStream in = state.jarFile.getInputStream(entry)) {
+							extractSimpleFileEntryToTextPane(in, name, path.toString());
 						}
 					}
 				}
 			} else {
 				name = file.getName();
-				path = file.getPath().replaceAll("\\\\", "/");
+				path = new StringBuilder(file.getPath().replaceAll("\\\\", "/"));
 				if (file.length() > MAX_UNPACKED_FILE_SIZE_BYTES) {
 					throw new TooLargeFileException(file.length());
 				}
 				if (name.endsWith(".class")) {
 					getLabel().setText("Extracting: " + name);
-					TypeReference type = metadataSystem.lookupType(path);
-					extractClassToTextPane(type, name, path, null);
+					TypeReference type = metadataSystem.lookupType(path.toString());
+					extractClassToTextPane(type, name, path.toString(), null);
 				} else {
 					getLabel().setText("Opening: " + name);
-					try (InputStream in = new FileInputStream(file);) {
-						extractSimpleFileEntryToTextPane(in, name, path);
+					try (InputStream in = new FileInputStream(file)) {
+						extractSimpleFileEntryToTextPane(in, name, path.toString());
 					}
 				}
 			}
@@ -392,11 +381,11 @@ public class Model extends JSplitPane {
 
 	void extractClassToTextPane(TypeReference type, String tabTitle, String path, String navigatonLink)
 			throws Exception {
-		if (tabTitle == null || tabTitle.trim().length() < 1 || path == null) {
+		if (tabTitle == null || tabTitle.trim().isEmpty() || path == null) {
 			throw new FileEntryNotFoundException();
 		}
 		OpenFile sameTitledOpen = null;
-		for (OpenFile nextOpen : hmap) {
+		for (OpenFile nextOpen : openFileSet) {
 			if (tabTitle.equals(nextOpen.name) && path.equals(nextOpen.path) && type.equals(nextOpen.getType())) {
 				sameTitledOpen = nextOpen;
 				break;
@@ -409,7 +398,7 @@ public class Model extends JSplitPane {
 		}
 
 		// resolve TypeDefinition
-		TypeDefinition resolvedType = null;
+		TypeDefinition resolvedType;
 		if (type == null || ((resolvedType = type.resolve()) == null)) {
 			throw new Exception("Unable to resolve type.");
 		}
@@ -430,18 +419,18 @@ public class Model extends JSplitPane {
 			open.setType(resolvedType);
 			open.setInitialNavigationLink(navigatonLink);
 			open.decompile();
-			hmap.add(open);
+			openFileSet.add(open);
 			addOrSwitchToTab(open);
 		}
 	}
 
 	public void extractSimpleFileEntryToTextPane(InputStream inputStream, String tabTitle, String path)
 			throws Exception {
-		if (inputStream == null || tabTitle == null || tabTitle.trim().length() < 1 || path == null) {
+		if (inputStream == null || tabTitle == null || tabTitle.trim().isEmpty() || path == null) {
 			throw new FileEntryNotFoundException();
 		}
 		OpenFile sameTitledOpen = null;
-		for (OpenFile nextOpen : hmap) {
+		for (OpenFile nextOpen : openFileSet) {
 			if (tabTitle.equals(nextOpen.name) && path.equals(nextOpen.path)) {
 				sameTitledOpen = nextOpen;
 				break;
@@ -456,7 +445,7 @@ public class Model extends JSplitPane {
 		StringBuilder sb = new StringBuilder();
 		long nonprintableCharactersCount = 0;
 		try (InputStreamReader inputStreamReader = new InputStreamReader(inputStream);
-				BufferedReader reader = new BufferedReader(inputStreamReader);) {
+				BufferedReader reader = new BufferedReader(inputStreamReader)) {
 			String line;
 			while ((line = reader.readLine()) != null) {
 				sb.append(line).append("\n");
@@ -471,7 +460,7 @@ public class Model extends JSplitPane {
 		}
 
 		// guess binary or text
-		String extension = "." + tabTitle.replaceAll("^[^\\.]*$", "").replaceAll("[^\\.]*\\.", "");
+		String extension = "." + tabTitle.replaceAll("^[^.]*$", "").replaceAll("[^.]*\\.", "");
 		boolean isTextFile = (OpenFile.WELL_KNOWN_TEXT_FILE_EXTENSIONS.contains(extension)
 				|| nonprintableCharactersCount < sb.length() / 5);
 		if (!isTextFile) {
@@ -489,7 +478,7 @@ public class Model extends JSplitPane {
 			OpenFile open = new OpenFile(tabTitle, path, getTheme(), mainWindow);
 			open.setDecompilerReferences(metadataSystem, settings, decompilationOptions);
 			open.setContent(sb.toString());
-			hmap.add(open);
+			openFileSet.add(open);
 			addOrSwitchToTab(open);
 		}
 	}
@@ -501,7 +490,7 @@ public class Model extends JSplitPane {
 			if (selectedIndex < 0) {
 				return;
 			}
-			for (OpenFile open : hmap) {
+			for (OpenFile open : openFileSet) {
 				if (house.indexOfTab(open.name) == selectedIndex) {
 
 					if (open.getType() != null && !open.isContentValid()) {
@@ -516,13 +505,13 @@ public class Model extends JSplitPane {
 
 	public void updateOpenClasses() {
 		// invalidate all open classes (update will hapen at tab change)
-		for (OpenFile open : hmap) {
+		for (OpenFile open : openFileSet) {
 			if (open.getType() != null) {
 				open.invalidateContent();
 			}
 		}
 		// update the current open tab - if it is a class
-		for (OpenFile open : hmap) {
+		for (OpenFile open : openFileSet) {
 			if (open.getType() != null && isTabInForeground(open)) {
 				updateOpenClass(open);
 				break;
@@ -534,22 +523,19 @@ public class Model extends JSplitPane {
 		if (open.getType() == null) {
 			return;
 		}
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				try {
-					bar.setVisible(true);
-					getLabel().setText("Extracting: " + open.name);
-					open.invalidateContent();
-					open.decompile();
-					getLabel().setText("Complete");
-				} catch (Exception e) {
-					getLabel().setText("Error, cannot update: " + open.name);
-				} finally {
-					bar.setVisible(false);
-				}
+		AsyncExecutor.execute(() -> {
+			try {
+				bar.setVisible(true);
+				getLabel().setText("Extracting: " + open.name);
+				open.invalidateContent();
+				open.decompile();
+				getLabel().setText("Complete");
+			} catch (Exception e) {
+				getLabel().setText("Error, cannot update: " + open.name);
+			} finally {
+				bar.setVisible(false);
 			}
-		}).start();
+		});
 	}
 
 	private boolean isTabInForeground(OpenFile open) {
@@ -558,9 +544,10 @@ public class Model extends JSplitPane {
 		return (selectedIndex >= 0 && selectedIndex == house.indexOfTab(title));
 	}
 
-	final class State implements AutoCloseable {
-		private final String key;
-		private final File file;
+	@Getter
+	static final class State implements AutoCloseable {
+        private final String key;
+        private final File file;
 		final JarFile jarFile;
 		final ITypeLoader typeLoader;
 
@@ -578,19 +565,11 @@ public class Model extends JSplitPane {
 			}
 			Closer.tryClose(jarFile);
 		}
-
-		public File getFile() {
-			return file;
-		}
-
-		public String getKey() {
-			return key;
-		}
-	}
+    }
 
 	public static class Tab extends JPanel {
-		private JLabel tabTitle;
-		private JLabel closeButton = new JLabel(new ImageIcon(
+		private final JLabel tabTitle;
+		private final JLabel closeButton = new JLabel(new ImageIcon(
 				Toolkit.getDefaultToolkit().getImage(this.getClass().getResource("/resources/icon_close.png"))));
 
 		public Tab(String title, final Callable<Void> onCloseTabAction) {
@@ -625,31 +604,17 @@ public class Model extends JSplitPane {
 		}
 	}
 
-	private class CloseTab extends MouseAdapter {
-		String title;
-
-		public CloseTab(String title) {
-			this.title = title;
-		}
-
-		@Override
-		public void mouseClicked(MouseEvent e) {
-			int index = house.indexOfTab(title);
-			closeOpenTab(index);
-		}
-	}
-
-	public DefaultMutableTreeNode loadNodesByNames(DefaultMutableTreeNode node, List<String> originalNames) {
+	public void loadNodesByNames(DefaultMutableTreeNode node, List<String> originalNames) {
 		List<TreeNodeUserObject> args = new ArrayList<>();
 		for (String originalName : originalNames) {
 			args.add(new TreeNodeUserObject(originalName));
 		}
-		return loadNodesByUserObj(node, args);
+		loadNodesByUserObj(node, args);
 	}
 
 	public DefaultMutableTreeNode loadNodesByUserObj(DefaultMutableTreeNode node, List<TreeNodeUserObject> args) {
-		if (args.size() > 0) {
-			TreeNodeUserObject name = args.remove(0);
+		if (!args.isEmpty()) {
+			TreeNodeUserObject name = args.removeFirst();
 			DefaultMutableTreeNode nod = getChild(node, name);
 			if (nod == null)
 				nod = new DefaultMutableTreeNode(name);
@@ -658,15 +623,23 @@ public class Model extends JSplitPane {
 		return node;
 	}
 
-	@SuppressWarnings("unchecked")
-	public DefaultMutableTreeNode getChild(DefaultMutableTreeNode node, TreeNodeUserObject name) {
-		Enumeration<DefaultMutableTreeNode> entry = node.children();
-		while (entry.hasMoreElements()) {
-			DefaultMutableTreeNode nods = entry.nextElement();
-			if (((TreeNodeUserObject) nods.getUserObject()).getOriginalName().equals(name.getOriginalName())) {
-				return nods;
+	public DefaultMutableTreeNode getChild(
+			final DefaultMutableTreeNode node,
+			final TreeNodeUserObject name
+	) {
+		final Enumeration<?> children = node.children();
+
+		while (children.hasMoreElements()) {
+			final DefaultMutableTreeNode child =
+					(DefaultMutableTreeNode) children.nextElement();
+
+			if (((TreeNodeUserObject) child.getUserObject())
+					.getOriginalName()
+					.equals(name.getOriginalName())) {
+				return child;
 			}
 		}
+
 		return null;
 	}
 
@@ -687,79 +660,73 @@ public class Model extends JSplitPane {
 	}
 
 	public void loadTree() {
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				try {
-					if (file == null) {
-						return;
-					}
-					tree.setModel(new DefaultTreeModel(null));
-
-					if (file.length() > MAX_JAR_FILE_SIZE_BYTES) {
-						throw new TooLargeFileException(file.length());
-					}
-					if (file.getName().endsWith(".zip") || file.getName().endsWith(".jar")) {
-						JarFile jfile;
-						jfile = new JarFile(file);
-						getLabel().setText("Loading: " + jfile.getName());
-						bar.setVisible(true);
-
-						JarEntryFilter jarEntryFilter = new JarEntryFilter(jfile);
-						List<String> mass = null;
-						if (luytenPrefs.isFilterOutInnerClassEntries()) {
-							mass = jarEntryFilter.getEntriesWithoutInnerClasses();
-						} else {
-							mass = jarEntryFilter.getAllEntriesFromJar();
-						}
-						buildTreeFromMass(mass);
-
-						if (state == null) {
-							ITypeLoader jarLoader = new JarTypeLoader(jfile);
-							typeLoader.getTypeLoaders().add(jarLoader);
-							state = new State(file.getCanonicalPath(), file, jfile, jarLoader);
-						}
-						open = true;
-						getLabel().setText("Complete");
-					} else {
-						TreeNodeUserObject topNodeUserObject = new TreeNodeUserObject(getName(file.getName()));
-						final DefaultMutableTreeNode top = new DefaultMutableTreeNode(topNodeUserObject);
-						tree.setModel(new DefaultTreeModel(top));
-						settings.setTypeLoader(new InputTypeLoader());
-						open = true;
-						getLabel().setText("Complete");
-
-						// open it automatically
-						new Thread() {
-							public void run() {
-								TreePath trp = new TreePath(top.getPath());
-								openEntryByTreePath(trp);
-							};
-						}.start();
-					}
-
-					if (treeExpansionState != null) {
-						try {
-							TreeUtil treeUtil = new TreeUtil(tree);
-							treeUtil.restoreExpanstionState(treeExpansionState);
-						} catch (Exception e) {
-							Luyten.showExceptionDialog("Exception!", e);
-						}
-					}
-				} catch (TooLargeFileException e) {
-					getLabel().setText("File is too large: " + file.getName() + " - size: " + e.getReadableFileSize());
-					closeFile();
-				} catch (Exception e1) {
-					Luyten.showExceptionDialog("Cannot open " + file.getName() + "!", e1);
-					getLabel().setText("Cannot open: " + file.getName());
-					closeFile();
-				} finally {
-					mainWindow.onFileLoadEnded(file, open);
-					bar.setVisible(false);
+		AsyncExecutor.execute(() -> {
+			try {
+				if (file == null) {
+					return;
 				}
-			}
+				tree.setModel(new DefaultTreeModel(null));
 
-		}).start();
+				if (file.length() > MAX_JAR_FILE_SIZE_BYTES) {
+					throw new TooLargeFileException(file.length());
+				}
+				if (file.getName().endsWith(".zip") || file.getName().endsWith(".jar")) {
+					JarFile jfile;
+					jfile = new JarFile(file);
+					getLabel().setText("Loading: " + jfile.getName());
+					bar.setVisible(true);
+
+					JarEntryFilter jarEntryFilter = new JarEntryFilter(jfile);
+					List<String> mass;
+					if (luytenPrefs.isFilterOutInnerClassEntries()) {
+						mass = jarEntryFilter.getEntriesWithoutInnerClasses();
+					} else {
+						mass = jarEntryFilter.getAllEntriesFromJar();
+					}
+					buildTreeFromMass(mass);
+
+					if (state == null) {
+						ITypeLoader jarLoader = new JarTypeLoader(jfile);
+						typeLoader.getTypeLoaders().add(jarLoader);
+						state = new State(file.getCanonicalPath(), file, jfile, jarLoader);
+					}
+					open = true;
+					getLabel().setText("Complete");
+				} else {
+					TreeNodeUserObject topNodeUserObject = new TreeNodeUserObject(getName(file.getName()));
+					final DefaultMutableTreeNode top = new DefaultMutableTreeNode(topNodeUserObject);
+					tree.setModel(new DefaultTreeModel(top));
+					settings.setTypeLoader(new InputTypeLoader());
+					open = true;
+					getLabel().setText("Complete");
+
+					// open it automatically
+					AsyncExecutor.execute(() -> {
+						TreePath trp = new TreePath(top.getPath());
+						openEntryByTreePath(trp);
+					});
+				}
+
+				if (treeExpansionState != null) {
+					try {
+						TreeUtil treeUtil = new TreeUtil(tree);
+						treeUtil.restoreExpanstionState(treeExpansionState);
+					} catch (Exception e) {
+						Luyten.showExceptionDialog("Exception!", e);
+					}
+				}
+			} catch (TooLargeFileException e) {
+				getLabel().setText("File is too large: " + file.getName() + " - size: " + e.getReadableFileSize());
+				closeFile();
+			} catch (Exception e1) {
+				Luyten.showExceptionDialog("Cannot open " + file.getName() + "!", e1);
+				getLabel().setText("Cannot open: " + file.getName());
+				closeFile();
+			} finally {
+				mainWindow.onFileLoadEnded(file, open);
+				bar.setVisible(false);
+			}
+		});
 	}
 
 	private void buildTreeFromMass(List<String> mass) {
@@ -773,24 +740,20 @@ public class Model extends JSplitPane {
 	private void buildDirectoryTreeFromMass(List<String> mass) {
 		TreeNodeUserObject topNodeUserObject = new TreeNodeUserObject(getName(file.getName()));
 		DefaultMutableTreeNode top = new DefaultMutableTreeNode(topNodeUserObject);
-		List<String> sort = new ArrayList<String>();
-		Collections.sort(mass, String.CASE_INSENSITIVE_ORDER);
+		List<String> sort = new ArrayList<>();
+		mass.sort(String.CASE_INSENSITIVE_ORDER);
 		for (String m : mass)
 			if (m.contains("META-INF") && !sort.contains(m))
 				sort.add(m);
-		Set<String> set = new HashSet<String>();
+		Set<String> set = new HashSet<>();
 		for (String m : mass) {
 			if (m.contains("/")) {
 				set.add(m.substring(0, m.lastIndexOf("/") + 1));
 			}
 		}
 		List<String> packs = Arrays.asList(set.toArray(new String[] {}));
-		Collections.sort(packs, String.CASE_INSENSITIVE_ORDER);
-		Collections.sort(packs, new Comparator<String>() {
-			public int compare(String o1, String o2) {
-				return o2.split("/").length - o1.split("/").length;
-			}
-		});
+		packs.sort(String.CASE_INSENSITIVE_ORDER);
+		packs.sort((o1, o2) -> o2.split("/").length - o1.split("/").length);
 		for (String pack : packs)
 			for (String m : mass)
 				if (!m.contains("META-INF") && m.contains(pack) && !m.replace(pack, "").contains("/"))
@@ -799,7 +762,7 @@ public class Model extends JSplitPane {
 			if (!m.contains("META-INF") && !m.contains("/") && !sort.contains(m))
 				sort.add(m);
 		for (String pack : sort) {
-			LinkedList<String> list = new LinkedList<String>(Arrays.asList(pack.split("/")));
+			LinkedList<String> list = new LinkedList<>(Arrays.asList(pack.split("/")));
 			loadNodesByNames(top, list);
 		}
 		tree.setModel(new DefaultTreeModel(top));
@@ -812,16 +775,8 @@ public class Model extends JSplitPane {
 		TreeMap<String, TreeSet<String>> packages = new TreeMap<>();
 		HashSet<String> classContainingPackageRoots = new HashSet<>();
 
-		Comparator<String> sortByFileExtensionsComparator = new Comparator<String>() {
-			// (assertion: mass does not contain null elements)
-			@Override
-			public int compare(String o1, String o2) {
-				int comp = o1.replaceAll("[^\\.]*\\.", "").compareTo(o2.replaceAll("[^\\.]*\\.", ""));
-				if (comp != 0)
-					return comp;
-				return o1.compareTo(o2);
-			}
-		};
+        // (assertion: mass does not contain null elements)
+        Comparator<String> sortByFileExtensionsComparator = Comparator.comparing((String o) -> o.replaceAll("[^.]*\\.", "")).thenComparing(o -> o);
 
 		for (String entry : mass) {
 			String packagePath = "";
@@ -832,10 +787,10 @@ public class Model extends JSplitPane {
 			}
 			String packageEntry = entry.replace(packagePath + "/", "");
 			if (!packages.containsKey(packagePath)) {
-				packages.put(packagePath, new TreeSet<String>(sortByFileExtensionsComparator));
+				packages.put(packagePath, new TreeSet<>(sortByFileExtensionsComparator));
 			}
 			packages.get(packagePath).add(packageEntry);
-			if (!entry.startsWith("META-INF") && packageRoot.trim().length() > 0
+			if (!entry.startsWith("META-INF") && !packageRoot.trim().isEmpty()
 					&& entry.matches(".*\\.(class|java|prop|properties)$")) {
 				classContainingPackageRoots.add(packageRoot);
 			}
@@ -859,7 +814,7 @@ public class Model extends JSplitPane {
 			if (classContainingPackageRoots.contains(packageRoot)) {
 				for (String entry : packages.get(packagePath)) {
 					ArrayList<TreeNodeUserObject> list = new ArrayList<>();
-					list.add(new TreeNodeUserObject(packagePath, packagePath.replaceAll("/", ".")));
+					list.add(new TreeNodeUserObject(packagePath, packagePath.replace("/", ".")));
 					list.add(new TreeNodeUserObject(entry));
 					loadNodesByUserObj(top, list);
 				}
@@ -870,7 +825,7 @@ public class Model extends JSplitPane {
 		for (String packagePath : packages.keySet()) {
 			String packageRoot = packagePath.replaceAll("/.*$", "");
 			if (!classContainingPackageRoots.contains(packageRoot) && !packagePath.startsWith("META-INF")
-					&& packagePath.length() > 0) {
+					&& !packagePath.isEmpty()) {
 				List<String> packagePathElements = Arrays.asList(packagePath.split("/"));
 				for (String entry : packages.get(packagePath)) {
 					ArrayList<String> list = new ArrayList<>(packagePathElements);
@@ -893,7 +848,7 @@ public class Model extends JSplitPane {
 	}
 
 	public void closeFile() {
-		for (OpenFile co : hmap) {
+		for (OpenFile co : openFileSet) {
 			int pos = house.indexOfTab(co.name);
 			if (pos >= 0)
 				house.remove(pos);
@@ -906,7 +861,7 @@ public class Model extends JSplitPane {
 			Closer.tryClose(oldState);
 		}
 
-		hmap.clear();
+		openFileSet.clear();
 		tree.setModel(new DefaultTreeModel(null));
 		metadataSystem = new MetadataSystem(typeLoader);
 		file = null;
@@ -920,7 +875,7 @@ public class Model extends JSplitPane {
 		try {
 			if (in != null) {
 				setTheme(Theme.load(in));
-				for (OpenFile f : hmap) {
+				for (OpenFile f : openFileSet) {
 					getTheme().apply(f.textArea);
 				}
 			}
@@ -975,88 +930,62 @@ public class Model extends JSplitPane {
 	}
 
 	public void startWarmUpThread() {
-		new Thread() {
-			public void run() {
-				try {
-					Thread.sleep(500);
-					String internalName = FindBox.class.getName();
-					TypeReference type = metadataSystem.lookupType(internalName);
-					TypeDefinition resolvedType = null;
-					if ((type == null) || ((resolvedType = type.resolve()) == null)) {
-						return;
-					}
-					StringWriter stringwriter = new StringWriter();
-					PlainTextOutput plainTextOutput = new PlainTextOutput(stringwriter);
-					plainTextOutput
-							.setUnicodeOutputEnabled(decompilationOptions.getSettings().isUnicodeOutputEnabled());
-					settings.getLanguage().decompileType(resolvedType, plainTextOutput, decompilationOptions);
-					String decompiledSource = stringwriter.toString();
-					OpenFile open = new OpenFile(internalName, "*/" + internalName, getTheme(), mainWindow);
-					open.setContent(decompiledSource);
-					JTabbedPane pane = new JTabbedPane();
-					pane.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
-					pane.addTab("title", open.scrollPane);
-					pane.setSelectedIndex(pane.indexOfTab("title"));
-				} catch (Exception e) {
-					Luyten.showExceptionDialog("Exception!", e);
+		AsyncExecutor.execute(() -> {
+			try {
+				Thread.sleep(500);
+				String internalName = FindBox.class.getName();
+				TypeReference type = metadataSystem.lookupType(internalName);
+				TypeDefinition resolvedType;
+				if ((type == null) || ((resolvedType = type.resolve()) == null)) {
+					return;
 				}
+				StringWriter stringwriter = new StringWriter();
+				PlainTextOutput plainTextOutput = new PlainTextOutput(stringwriter);
+				plainTextOutput
+						.setUnicodeOutputEnabled(decompilationOptions.getSettings().isUnicodeOutputEnabled());
+				settings.getLanguage().decompileType(resolvedType, plainTextOutput, decompilationOptions);
+				String decompiledSource = stringwriter.toString();
+				OpenFile open = new OpenFile(internalName, "*/" + internalName, getTheme(), mainWindow);
+				open.setContent(decompiledSource);
+				JTabbedPane pane = new JTabbedPane();
+				pane.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
+				pane.addTab("title", open.scrollPane);
+				pane.setSelectedIndex(pane.indexOfTab("title"));
+			} catch (Exception e) {
+				Luyten.showExceptionDialog("Exception!", e);
 			}
-		}.start();
+		});
 	}
 
 	public void navigateTo(final String uniqueStr) {
-		new Thread(new Runnable() {
-			@Override
-			public void run() {
-				if (uniqueStr == null)
-					return;
-				String[] linkParts = uniqueStr.split("\\|");
-				if (linkParts.length <= 1)
-					return;
-				String destinationTypeStr = linkParts[1];
-				try {
-					bar.setVisible(true);
-					getLabel().setText("Navigating: " + destinationTypeStr.replaceAll("/", "."));
+		AsyncExecutor.execute(() -> {
+			if (uniqueStr == null)
+				return;
+			String[] linkParts = uniqueStr.split("\\|");
+			if (linkParts.length <= 1)
+				return;
+			String destinationTypeStr = linkParts[1];
+			try {
+				bar.setVisible(true);
+				getLabel().setText("Navigating: " + destinationTypeStr.replace("/", "."));
 
-					TypeReference type = metadataSystem.lookupType(destinationTypeStr);
-					if (type == null)
-						throw new RuntimeException("Cannot lookup type: " + destinationTypeStr);
-					TypeDefinition typeDef = type.resolve();
-					if (typeDef == null)
-						throw new RuntimeException("Cannot resolve type: " + destinationTypeStr);
+				TypeReference type = metadataSystem.lookupType(destinationTypeStr);
+				if (type == null)
+					throw new RuntimeException("Cannot lookup type: " + destinationTypeStr);
+				TypeDefinition typeDef = type.resolve();
+				if (typeDef == null)
+					throw new RuntimeException("Cannot resolve type: " + destinationTypeStr);
 
-					String tabTitle = typeDef.getName() + ".class";
-					extractClassToTextPane(typeDef, tabTitle, destinationTypeStr, uniqueStr);
+				String tabTitle = typeDef.getName() + ".class";
+				extractClassToTextPane(typeDef, tabTitle, destinationTypeStr, uniqueStr);
 
-					getLabel().setText("Complete");
-				} catch (Exception e) {
-					getLabel().setText("Cannot navigate: " + destinationTypeStr.replaceAll("/", "."));
-					Luyten.showExceptionDialog("Cannot Navigate!", e);
-				} finally {
-					bar.setVisible(false);
-				}
+				getLabel().setText("Complete");
+			} catch (Exception e) {
+				getLabel().setText("Cannot navigate: " + destinationTypeStr.replace("/", "."));
+				Luyten.showExceptionDialog("Cannot Navigate!", e);
+			} finally {
+				bar.setVisible(false);
 			}
-		}).start();
+		});
 	}
-
-	public JLabel getLabel() {
-		return label;
-	}
-
-	public void setLabel(JLabel label) {
-		this.label = label;
-	}
-
-	public State getState() {
-		return state;
-	}
-
-	public Theme getTheme() {
-		return theme;
-	}
-
-	public void setTheme(Theme theme) {
-		this.theme = theme;
-	}
-
 }
